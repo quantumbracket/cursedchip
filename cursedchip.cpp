@@ -518,14 +518,14 @@ class Chip8{
 
                         case 0x1E:{//add I with Vx (add I,Vx)
                             uint16_t bVal=this->I;
-                            this->I = (this->I + this->V[GetX(opcode)]) % 0xfff;
+                            this->I = (this->I + this->V[GetX(opcode)]) & 0xfff;
                             this->V[0xf]=(this->I < bVal) ? 1 : 0;
                             this->PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x29:{//sets I to the next sprite(I=(VX*5)) (ld F,Vx)
-                            this->I = (this->V[GetX(opcode)] * 5) % 0xfff;
+                            this->I = (this->V[GetX(opcode)] * 5) & 0xfff;
                             this->PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
@@ -572,7 +572,7 @@ class Chip8{
             }
         }
     public:
-        uint8_t mem[0xfff]={0};
+        uint8_t mem[0x1000]={0};
         uint8_t V[0x10]={0};
         uint16_t I=0;
         uint16_t PC=0x200;
