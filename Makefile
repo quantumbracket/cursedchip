@@ -4,14 +4,15 @@ CFLAGS=-lncurses
 TARGET=cursedchip
 
 
-$(TARGET): $(TARGET).cpp
+$(TARGET): source/main.cpp
 	mkdir -p build
-	$(CC) $(CFLAGS) -o build/$(TARGET) $(TARGET).cpp
+	$(CC) $(CFLAGS) -o build/$(TARGET) source/main.cpp
 
 .PHONY: clean debug
 
 debug:
-	$(CC) -g $(CFLAGS) -o build/$(TARGET) $(TARGET).cpp
+	mkdir -p build
+	$(CC) -g $(CFLAGS) -o build/$(TARGET) source/main.cpp
 
 
 
