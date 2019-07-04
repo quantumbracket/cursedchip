@@ -6,6 +6,12 @@
 #include<sys/time.h>
 
 
+/* TODO:
+ * anyting that runs at 60hz should run in a separate thread
+ * separate everything in different header files
+ */
+
+
 
 
 //general options
@@ -236,44 +242,72 @@ class KeyboardHandler {
 };
 
 
+typedef struct {
+	uint8_t V[0x10];
+	uint16_t I;
+	uint16_t PC;
+	uint8_t SP;
+	uint8_t DT;
+	uint8_t ST;
+} registers_t;
 
-class Chip8{
+
+class Runtime{
+	public:
+		registers_t registers = {
+			.V = {0},
+			.I = 0,
+			.PC = 0x200,
+			.SP = 0,
+			.DT = 0,
+			.ST = 0
+		};
+		uint8_t mem[0x1000]={0};
+            	uint16_t stack[0x10]={0};
+        	ScreenHandler* screen;
+        	KeyboardHandler* keyboard;
+};
+
+
+
+
+class Interpreter{
 
         void Every60HZ(){
-            this->keyboard->Every60HZ();
-            this->ST=conv_timer(this->ST-1);
-            if(this->ST > 0){
+            this->runtime->keyboard->Every60HZ();
+            this->runtime->registers.ST=conv_timer(runtime->registers.ST-1);
+            if(this->runtime->registers.ST > 0){
                 std::cout << '\a';
                 std::cout.flush();
             }
-            this->DT=conv_timer(this->DT-1);
+            this->runtime->registers.DT=conv_timer(runtime->registers.DT-1);
         }
 
         ERRORCODE Step(){
-            this->keyboard->GetKey();
-            if(this->PC+1 > 0xfff) return pack_error(ERR_OUT_OF_MEM,0);
+            this->runtime->keyboard->GetKey();
+            if(this->runtime->registers.PC+1 > 0xfff) return pack_error(ERR_OUT_OF_MEM,0);
 
-            uint16_t opcode=(this->mem[this->PC] << 8) | (this->mem[this->PC+1]);
+            uint16_t opcode=(this->runtime->mem[runtime->registers.PC] << 8) | (runtime->mem[runtime->registers.PC+1]);
             switch(GetINSTR(opcode)){
                 case 0x0:{
                     switch(GetKK(opcode)){
                         case 0xE0:{//clear screen(cls)
                             for(int x=0;x < LENGHT;x++){
                                 for(int y=0;y < HEIGHT;y++){
-                                    this->screen->WritePixel(x,y,false);
+                                    this->runtime->screen->WritePixel(x,y,false);
                                 }
                             }
                     
-                            this->screen->UpdateScreen();
-                            this->PC+=2;
+                            this->runtime->screen->UpdateScreen();
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
                         case 0xFD:{//exit(exit)
                             return pack_error(CLEAN_EXIT,opcode);
                         }
                         case 0xEE:{//return(ret)
-                            if(this->SP <= 0) return pack_error(ERR_STACK_UNDERFLOW,opcode);
-                            this->PC=this->stack[this->SP--];
+                            if(this->runtime->registers.SP <= 0) return pack_error(ERR_STACK_UNDERFLOW,opcode);
+                            this->runtime->registers.PC=runtime->stack[runtime->registers.SP--];
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
                         default:{
@@ -285,120 +319,120 @@ class Chip8{
                 }
 
                 case 0x1:{//jump(jp NNN)
-                    this->PC=GetNNN(opcode);
+                    this->runtime->registers.PC=GetNNN(opcode);
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
                 
                 case 0x2:{//call (call NNN)
-                    if(this->SP >= 0x10) return pack_error(ERR_STACK_OVERFLOW,opcode);
-                    this->stack[++this->SP]=this->PC+2;
-                    this->PC=GetNNN(opcode);
+                    if(this->runtime->registers.SP >= 0x10) return pack_error(ERR_STACK_OVERFLOW,opcode);
+                    this->runtime->stack[++runtime->registers.SP]=runtime->registers.PC+2;
+                    this->runtime->registers.PC=GetNNN(opcode);
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
                 
                 case 0x3:{//skip if equal(se Vx,KK)
-                    if(this->V[GetX(opcode)] == GetKK(opcode)){
-                        this->PC+=2;
+                    if(this->runtime->registers.V[GetX(opcode)] == GetKK(opcode)){
+                        this->runtime->registers.PC+=2;
                     }
-                    this->PC+=2;
+                    this->runtime->registers.PC+=2;
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
 
                 case 0x4:{//skip if not equal(sne Vx,KK)
-                    if(this->V[GetX(opcode)] != GetKK(opcode)){
-                        this->PC+=2;
+                    if(this->runtime->registers.V[GetX(opcode)] != GetKK(opcode)){
+                        this->runtime->registers.PC+=2;
                     }
-                    this->PC+=2;
+                    this->runtime->registers.PC+=2;
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
 
                 case 0x5:{//skip if equal(se Vx,Vy)
-                    if(this->V[GetX(opcode)] == this->V[GetY(opcode)]){
-                        this->PC+=2;
+                    if(this->runtime->registers.V[GetX(opcode)] == this->runtime->registers.V[GetY(opcode)]){
+                        this->runtime->registers.PC+=2;
                     }
-                    this->PC+=2;
+                    this->runtime->registers.PC+=2;
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
 
 
                 case 0x6:{//load (ld Vx,kk)
-                    this->V[GetX(opcode)] = GetKK(opcode);
-                    this->PC+=2;
+                    this->runtime->registers.V[GetX(opcode)] = GetKK(opcode);
+                    this->runtime->registers.PC+=2;
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
 
                 case 0x7:{//add (add Vx,kk)
-                    this->V[GetX(opcode)] += GetKK(opcode);
-                    this->PC+=2;
+                    this->runtime->registers.V[GetX(opcode)] += GetKK(opcode);
+                    this->runtime->registers.PC+=2;
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
 
                 case 0x8:{
                     switch(GetN(opcode)){
                         case 0x0:{//load (ld Vx,Vy)
-                            this->V[GetX(opcode)] = this->V[GetY(opcode)];
-                            this->PC+=2;
+                            this->runtime->registers.V[GetX(opcode)] = this->runtime->registers.V[GetY(opcode)];
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x1:{//or (or Vx,Vy)
-                            this->V[GetX(opcode)] |= this->V[GetY(opcode)];
-                            this->PC+=2;
+                            this->runtime->registers.V[GetX(opcode)] |= this->runtime->registers.V[GetY(opcode)];
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x2:{//and (and Vx,Vy)
-                            this->V[GetX(opcode)] &= this->V[GetY(opcode)];
-                            this->PC+=2;
+                            this->runtime->registers.V[GetX(opcode)] &= this->runtime->registers.V[GetY(opcode)];
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x3:{//xor (xor Vx,Vy)
-                            this->V[GetX(opcode)] ^= this->V[GetY(opcode)];
-                            this->PC+=2;
+                            this->runtime->registers.V[GetX(opcode)] ^= this->runtime->registers.V[GetY(opcode)];
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x4:{//add (add Vx,Vy)(Vf = 1 on carry)
                             uint8_t regX=GetX(opcode);
                             uint8_t regY=GetY(opcode);
-                            this->V[0xf] = (this->V[regY] > (0xff-this->V[regX])) ? 1 : 0;
-                            this->V[regX] += this->V[regY];
-                            this->PC+=2;
+                            this->runtime->registers.V[0xf] = (this->runtime->registers.V[regY] > (0xff-this->runtime->registers.V[regX])) ? 1 : 0;
+                            this->runtime->registers.V[regX] += this->runtime->registers.V[regY];
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x5:{//substract (sub Vx,Vy)(Vf = 0 on borrow)
                             uint8_t regX=GetX(opcode);
                             uint8_t regY=GetY(opcode);
-                            this->V[0xf] = (this->V[regX] > this->V[regY]) ? 1 : 0;
-                            this->V[regX] -= this->V[regY];
-                            this->PC+=2;
+                            this->runtime->registers.V[0xf] = (this->runtime->registers.V[regX] > this->runtime->registers.V[regY]) ? 1 : 0;
+                            this->runtime->registers.V[regX] -= this->runtime->registers.V[regY];
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x6:{//divide by 2| shift right by 1 (shr Vx)(Vf = 1 if Vx lsb's = 1)
                             uint8_t regX=GetX(opcode);
-                            this->V[0xf] = this->V[regX] & 1;
-                            this->V[regX] >>= 1;
-                            this->PC+=2;
+                            this->runtime->registers.V[0xf] = this->runtime->registers.V[regX] & 1;
+                            this->runtime->registers.V[regX] >>= 1;
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x7:{//substract 'reverse' (subn Vx,Vy)(Vf = 0 on borrow)
                             uint8_t regX=GetX(opcode);
                             uint8_t regY=GetY(opcode);
-                            this->V[0xf] = (this->V[regY] > this->V[regX]) ? 1 : 0;
-                            this->V[regX] = this->V[regY] - this->V[regX];
-                            this->PC+=2;
+                            this->runtime->registers.V[0xf] = (this->runtime->registers.V[regY] > this->runtime->registers.V[regX]) ? 1 : 0;
+                            this->runtime->registers.V[regX] = this->runtime->registers.V[regY] - this->runtime->registers.V[regX];
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0xE:{//multiply by 2 | shift left by 1 (shl Vx)(Vf = 1 if Vx msb's = 1)
                             uint8_t regX=GetX(opcode);
-                            this->V[0xf] = (this->V[regX] >> 7);
-                            this->V[regX] <<= 1;
-                            this->PC+=2;
+                            this->runtime->registers.V[0xf] = (this->runtime->registers.V[regX] >> 7);
+                            this->runtime->registers.V[regX] <<= 1;
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
@@ -411,71 +445,71 @@ class Chip8{
                 }
                 
                 case 0x9:{//skip if not equal (sne Vx,Vy)
-                    if(this->V[GetX(opcode)] != this->V[GetY(opcode)]){
-                        this->PC+=2;
+                    if(this->runtime->registers.V[GetX(opcode)] != this->runtime->registers.V[GetY(opcode)]){
+                        this->runtime->registers.PC+=2;
                     }
-                    this->PC+=2;
+                    this->runtime->registers.PC+=2;
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
 
                 case 0xA:{//load addr in I register (ld I,NNN)
-                    this->I=GetNNN(opcode);
-                    this->PC+=2;
+                    this->runtime->registers.I=GetNNN(opcode);
+                    this->runtime->registers.PC+=2;
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
 
                 case 0xB:{//jump V0+addr (jp V0,NNN)
-                    this->PC=this->V[0]+GetNNN(opcode);
+                    this->runtime->registers.PC=this->runtime->registers.V[0]+GetNNN(opcode);
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
 
                 case 0xC:{//random number and KK (rnd Vx,kk)
-                    this->V[GetX(opcode)] = (rand() % 0x100) & GetKK(opcode);
-                    this->PC+=2;
+                    this->runtime->registers.V[GetX(opcode)] = (rand() % 0x100) & GetKK(opcode);
+                    this->runtime->registers.PC+=2;
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
 
                 case 0xD:{//draw sprite at [I] in the position Vx and Vy on the screen with the sprite lenght of N (drw Vx,Vy,N)(Vf = 1 if collision)
-                    uint8_t regX=this->V[GetX(opcode)];
-                    uint8_t regY=this->V[GetY(opcode)];
+                    uint8_t regX=this->runtime->registers.V[GetX(opcode)];
+                    uint8_t regY=this->runtime->registers.V[GetY(opcode)];
                     uint8_t sprite_len=GetN(opcode);
-                    this->V[0xf]=0;
+                    this->runtime->registers.V[0xf]=0;
                     for(int y = 0;y < sprite_len;y++){
-                        uint16_t offset=this->I+y;
+                        uint16_t offset=this->runtime->registers.I+y;
                         if(offset > 0xfff) return pack_error(ERR_OUT_OF_MEM,opcode);
-                        uint8_t cur_line=this->mem[offset];
+                        uint8_t cur_line=this->runtime->mem[offset];
                         for(int x=0;x < 8;x++){
                             uint8_t xpos=(regX+x);
                             uint8_t ypos=(regY+y);
                             if(cur_line & (0x80 >> x)){
-                                bool scr_pixel=this->screen->ReadPixel(xpos,ypos);
-                                if(scr_pixel) this->V[0xf]=1;
-                                this->screen->WritePixel(xpos,ypos,(scr_pixel != true));
+                                bool scr_pixel=this->runtime->screen->ReadPixel(xpos,ypos);
+                                if(scr_pixel) this->runtime->registers.V[0xf]=1;
+                                this->runtime->screen->WritePixel(xpos,ypos,(scr_pixel != true));
                             }
 
                         }
                     }
-                    this->screen->UpdateScreen();
+                    this->runtime->screen->UpdateScreen();
                     
-                    this->PC+=2;
+                    this->runtime->registers.PC+=2;
                     return pack_error(EXEC_CONTINUE,opcode);
                 }
 
                 case 0xE:{
                     switch(GetKK(opcode)){
                         case 0x9E:{//skip if key is pressed (skp Vx)
-                            if(this->keyboard->isKeyPressed(this->V[GetX(opcode)])){
-                                this->PC+=2;
+                            if(this->runtime->keyboard->isKeyPressed(this->runtime->registers.V[GetX(opcode)])){
+                                this->runtime->registers.PC+=2;
                             }
-                            this->PC+=2;
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0xA1:{//skip if key not pressed (sknp Vx)
-                            if(!this->keyboard->isKeyPressed(this->V[GetX(opcode)])){
-                                this->PC+=2;
+                            if(!this->runtime->keyboard->isKeyPressed(this->runtime->registers.V[GetX(opcode)])){
+                                this->runtime->registers.PC+=2;
                             }
-                            this->PC+=2;
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
@@ -489,63 +523,63 @@ class Chip8{
                 case 0xF:{
                     switch(GetKK(opcode)){
                         case 0x7:{//load DT register in Vx (ld Vx,DT)
-                            this->V[GetX(opcode)] = this->DT;
-                            this->PC+=2;
+                            this->runtime->registers.V[GetX(opcode)] = runtime->registers.DT;
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0xA:{//wait for key press and store value in Vx (ld Vx,K)
                             uint8_t cur_key=0xff;
                             while(cur_key == 0xff){
-                                cur_key=this->keyboard->GetKey(false);
+                                cur_key=this->runtime->keyboard->GetKey(false);
                             }
-                            this->V[GetX(opcode)] = cur_key;
-                            this->PC+=2;
+                            this->runtime->registers.V[GetX(opcode)] = cur_key;
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x15:{//set DT (ld DT,Vx)
-                            this->DT=this->V[GetX(opcode)];
-                            this->PC+=2;
+                            this->runtime->registers.DT=this->runtime->registers.V[GetX(opcode)];
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x18:{//set ST (ld ST,Vx)
-                            this->ST=this->V[GetX(opcode)];
-                            this->PC+=2;
+                            this->runtime->registers.ST=this->runtime->registers.V[GetX(opcode)];
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x1E:{//add I with Vx (add I,Vx)
-                            uint16_t bVal=this->I;
-                            this->I = (this->I + this->V[GetX(opcode)]) & 0xfff;
-                            this->V[0xf]=(this->I < bVal) ? 1 : 0;
-                            this->PC+=2;
+                            uint16_t bVal=this->runtime->registers.I;
+                            this->runtime->registers.I = (runtime->registers.I + this->runtime->registers.V[GetX(opcode)]) & 0xfff;
+                            this->runtime->registers.V[0xf]=(runtime->registers.I < bVal) ? 1 : 0;
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x29:{//sets I to the next sprite(I=(VX*5)) (ld F,Vx)
-                            this->I = (this->V[GetX(opcode)] * 5) & 0xfff;
-                            this->PC+=2;
+                            this->runtime->registers.I = (this->runtime->registers.V[GetX(opcode)] * 5) & 0xfff;
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x33:{//makes vx in human format(decimal) and stores it in I,I+1 and I+2 (ld B,Vx)
-                            uint8_t regX=this->V[GetX(opcode)];
-                            uint16_t Ival=this->I;
-                            this->mem[Ival]=(uint8_t)(regX / 100 % 10); 
-                            this->mem[Ival+1]=(uint8_t)(regX / 10 % 10);
-                            this->mem[Ival+2]=(uint8_t)(regX % 10);
-                            this->PC+=2;
+                            uint8_t regX=this->runtime->registers.V[GetX(opcode)];
+                            uint16_t Ival=this->runtime->registers.I;
+                            this->runtime->mem[Ival]=(uint8_t)(regX / 100 % 10); 
+                            this->runtime->mem[Ival+1]=(uint8_t)(regX / 10 % 10);
+                            this->runtime->mem[Ival+2]=(uint8_t)(regX % 10);
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
                         case 0x55:{//load registers from V0 to Vx at memory address I (ld [I], Vx)
                             uint8_t copy_size=GetX(opcode);
                             for(int x=0;x<=copy_size;x++){
-                                this->mem[this->I+x] = this->V[x];
+                                this->runtime->mem[runtime->registers.I+x] = this->runtime->registers.V[x];
                             }
-                            this->PC+=2;
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
@@ -553,9 +587,9 @@ class Chip8{
                         case 0x65:{//read registers from V0 to Vx from memory address I (ld Vx,[I])
                             uint8_t copy_size=GetX(opcode);
                             for(int x=0;x<=copy_size;x++){
-                                this->V[x] = this->mem[this->I+x];
+                                this->runtime->registers.V[x] = runtime->mem[runtime->registers.I+x];
                             }
-                            this->PC+=2;
+                            this->runtime->registers.PC+=2;
                             return pack_error(EXEC_CONTINUE,opcode);
                         }
 
@@ -572,26 +606,19 @@ class Chip8{
             }
         }
     public:
-        uint8_t mem[0x1000]={0};
-        uint8_t V[0x10]={0};
-        uint16_t I=0;
-        uint16_t PC=0x200;
-        uint8_t SP=0;
-        uint16_t stack[0x10]={0};
-        uint8_t DT=0;
-        uint8_t ST=0;
-        ScreenHandler* screen;
-        KeyboardHandler* keyboard;
-        Chip8(ScreenHandler* ss,KeyboardHandler* kk,ssize_t romsize,char* romdata){
+	Runtime* runtime;
+
+        Interpreter(ScreenHandler* ss,KeyboardHandler* kk, Runtime* rt, ssize_t romsize,char* romdata){
+	    this->runtime = rt;
             for(int x=0;x < 80;x++){
-                this->mem[x]=CHIP8_FONTSET[x];
+                this->runtime->mem[x]=CHIP8_FONTSET[x];
             }
 
             for(int x=0;x < romsize;x++){
-                this->mem[0x200+x] = romdata[x];
+                this->runtime->mem[0x200+x] = romdata[x];
             }
-            this->screen=ss;
-            this->keyboard=kk;
+            this->runtime->screen=ss;
+            this->runtime->keyboard=kk;
             srand(time(NULL));
         }
 
@@ -611,9 +638,6 @@ class Chip8{
             }
         }
 
-        ~Chip8(){
-            this->screen->~ScreenHandler();
-        }
 
 
 
@@ -692,13 +716,15 @@ int main(int argc,const char* argv[]){
     
     ScreenHandler scr;
     KeyboardHandler kb;
+    Runtime rt;
 
-    Chip8 emu(&scr,&kb,rom_contents->size,rom_contents->data);
+    Interpreter emu(&scr,&kb,&rt,rom_contents->size,rom_contents->data);
 
     
     ERRORCODE err= emu.Run();
-    uint16_t curpc = emu.PC;
-    emu.~Chip8();
+    scr.~ScreenHandler();
+    uint16_t curpc = rt.registers.PC;
+    emu.~Interpreter();
 
     std::printf("error code: %hhi %s\nopcode: %04hx\nPC = 0x%hx\n",err.error_num,err2string(err.error_num),err.opcode,curpc);
     return 0;

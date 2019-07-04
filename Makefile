@@ -5,8 +5,15 @@ TARGET=cursedchip
 
 
 $(TARGET): $(TARGET).cpp
-	$(CC) $(CFLAGS) -o $(TARGET) $(TARGET).cpp
+	mkdir -p build
+	$(CC) $(CFLAGS) -o build/$(TARGET) $(TARGET).cpp
+
+.PHONY: clean debug
+
+debug:
+	$(CC) -g $(CFLAGS) -o build/$(TARGET) $(TARGET).cpp
+
 
 
 clean:
-	rm $(TARGET)
+	rm -rf build
