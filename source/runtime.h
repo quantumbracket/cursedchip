@@ -88,7 +88,7 @@ typedef struct{
 
 
 //print error codes
-const char* ERR_CODES_HR[]={"ERR_STACK_OVERFLOW","ERR_STACK_UNDERFLOW","ERR_INVALID_OP","ERR_OUT_OF_MEM","CLEAN_EXIT","EXEC_CONTINUE (suddenly stoped?)"};
+const char* ERR_CODES_HR[]={"ERR_STACK_OVERFLOW","ERR_STACK_UNDERFLOW","ERR_INVALID_OP","ERR_OUT_OF_MEM","CLEAN_EXIT","EXEC_CONTINUE (suddenly stopped?)"};
 
 #define err2string(errcode) ERR_CODES_HR[(int)(4+errcode)]
 
